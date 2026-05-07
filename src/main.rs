@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Cursor};
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
@@ -10,6 +10,7 @@ use ratatui::{
         canvas::{Canvas, Line},
     },
 };
+use rodio::{Decoder, DeviceSinkBuilder, Player};
 
 use std::sync::mpsc::channel;
 use std::thread;
@@ -18,7 +19,10 @@ use std::time::Duration;
 enum AppEvent {
     Tick,
     Key(KeyCode),
+    MusicEnded,
 }
+
+static MUSIC_BYTES: &[u8] = include_bytes!("../assets/test.ogg");
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
@@ -36,6 +40,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
         }
+    });
+
+    let tx_music = tx.clone();
+    thread::spawn(move || {
+        let handle = DeviceSinkBuilder::open_default_sink().unwrap();
+        let player = Player::connect_new(&handle.mixer());
+        let cursor = Cursor::new(MUSIC_BYTES);
+        if let Ok(source) = Decoder::try_from(cursor) {
+            player.append(source);
+            player.sleep_until_end();
+        }
+        let _ = tx_music.send(AppEvent::MusicEnded);
     });
 
     // Input thread
